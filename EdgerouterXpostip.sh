@@ -41,14 +41,71 @@ CUSTOM_SPEED_URL="https://filedownload.helo.de5.net"
 
 UPLOAD_URL="https://cfbestip.cfworkers.com/api/upload"
 
-AUTH_KEY="BUsdfsfsfsfsKr484"
+AUTH_KEY="BUllddsfffslKr484"
 
 # 运营商标识
 # ct = 电信
 # cu = 联通
 # cm = 移动
 
-CARRIER="cu"
+#CARRIER="cu"
+CARRIER="default"
+# ============================================================
+# 自动检测当前公网线路运营商
+# ============================================================
+detect_carrier() {
+    log INFO "开始检测当前网络线路..."
+
+    local GEO_JSON
+    local ISP
+    local GEO_IP
+
+    GEO_JSON=$("$CURL_BIN" -s \
+        --max-time 10 \
+        "http://ip-api.com/json/?fields=query,isp" \
+        2>/dev/null || true)
+
+    if [[ -z "$GEO_JSON" ]]; then
+        CARRIER="default"
+        log WARN "线路检测失败，按 default 处理"
+        return 0
+    fi
+
+    ISP=$(echo "$GEO_JSON" | jq -r '.isp // empty' 2>/dev/null || true)
+    GEO_IP=$(echo "$GEO_JSON" | jq -r '.query // empty' 2>/dev/null || true)
+
+    if [[ -z "$ISP" ]]; then
+        CARRIER="default"
+        log WARN "无法获取 ISP 信息，按 default 处理"
+        return 0
+    fi
+
+    if echo "$ISP" | grep -Eiq 'China Mobile|移动'; then
+        CARRIER="cm"
+        log INFO "当前公网 IP : ${GEO_IP:-未知}"
+        log INFO "当前 ISP     : $ISP"
+        log INFO "检测到运营商 : 中国移动 (cm)"
+
+    elif echo "$ISP" | grep -Eiq 'China Unicom|联通'; then
+        CARRIER="cu"
+        log INFO "当前公网 IP : ${GEO_IP:-未知}"
+        log INFO "当前 ISP     : $ISP"
+        log INFO "检测到运营商 : 中国联通 (cu)"
+
+    elif echo "$ISP" | grep -Eiq 'China Telecom|电信'; then
+        CARRIER="ct"
+        log INFO "当前公网 IP : ${GEO_IP:-未知}"
+        log INFO "当前 ISP     : $ISP"
+        log INFO "检测到运营商 : 中国电信 (ct)"
+
+    else
+        CARRIER="default"
+        log WARN "当前公网 IP : ${GEO_IP:-未知}"
+        log WARN "当前 ISP     : $ISP"
+        log WARN "未识别到移动/联通/电信，使用 default"
+        log WARN "如果当前使用了代理/TUN/全局模式，测速结果可能是代理出口视角"
+    fi
+}
 
 
 # ==================== Telegram 相关 ====================
@@ -706,10 +763,11 @@ main() {
         exit 1
 
     fi
-
+	
+	# 自动检测当前线路运营商
+	detect_carrier
 
     # 启动超时保护
-
     start_watchdog
 
 

@@ -18,7 +18,13 @@ CUSTOM_SPEED_URL="https://filedownload.helo.de5.net"    # 自定义测速下载�
 # 上传接口相关
 UPLOAD_URL="https://cfbestip.cfworkers.com/api/upload"    # Worker 上传接口地址
 AUTH_KEY="BUldfsdfsflKr484" # 上传接口 Authorization 密钥
-CARRIER="cu"    # 运营商标识（ct=电信 / cu=联通 / cm=移动）
+
+# 运营商标识
+# ct = 电信
+# cu = 联通
+# cm = 移动
+# default = 未识别
+CARRIER="default"
 
 # Telegram 通知相关（上传接口需要这两个字段）
 TG_BOT_TOKEN="" # Telegram Bot Token
@@ -46,6 +52,64 @@ log() {
 # 清理 7 天前的旧日志
 clean_logs() {
     find "$LOG_DIR" -type f -name "cfst_ddns_*.log" -mtime +7 -delete
+}
+
+# ============================================================
+# 自动检测当前公网线路运营商
+# ============================================================
+detect_carrier() {
+    log INFO "开始检测当前网络线路..."
+
+    local GEO_JSON
+    local ISP
+    local GEO_IP
+
+    GEO_JSON=$(curl -s \
+        --connect-timeout 10 \
+        --max-time 15 \
+        "http://ip-api.com/json/?fields=query,isp" \
+        2>/dev/null || true)
+
+    if [[ -z "$GEO_JSON" ]]; then
+        CARRIER="default"
+        log WARN "线路检测失败，按 default 处理"
+        return 0
+    fi
+
+    ISP=$(echo "$GEO_JSON" | jq -r '.isp // empty' 2>/dev/null || true)
+    GEO_IP=$(echo "$GEO_JSON" | jq -r '.query // empty' 2>/dev/null || true)
+
+    if [[ -z "$ISP" ]]; then
+        CARRIER="default"
+        log WARN "无法获取 ISP 信息，按 default 处理"
+        return 0
+    fi
+
+    if echo "$ISP" | grep -Eiq 'China Mobile|移动'; then
+        CARRIER="cm"
+        log INFO "当前公网 IP : ${GEO_IP:-未知}"
+        log INFO "当前 ISP     : $ISP"
+        log INFO "检测到运营商 : 中国移动 (cm)"
+
+    elif echo "$ISP" | grep -Eiq 'China Unicom|联通'; then
+        CARRIER="cu"
+        log INFO "当前公网 IP : ${GEO_IP:-未知}"
+        log INFO "当前 ISP     : $ISP"
+        log INFO "检测到运营商 : 中国联通 (cu)"
+
+    elif echo "$ISP" | grep -Eiq 'China Telecom|电信'; then
+        CARRIER="ct"
+        log INFO "当前公网 IP : ${GEO_IP:-未知}"
+        log INFO "当前 ISP     : $ISP"
+        log INFO "检测到运营商 : 中国电信 (ct)"
+
+    else
+        CARRIER="default"
+        log WARN "当前公网 IP : ${GEO_IP:-未知}"
+        log WARN "当前 ISP     : $ISP"
+        log WARN "未识别到移动/联通/电信，使用 default"
+        log WARN "如果当前使用了代理/TUN/全局模式，测速结果可能是代理出口视角"
+    fi
 }
 
 # ==================== 进程锁（防止重复运行） ====================
@@ -330,12 +394,18 @@ main() {
 
     log INFO "========================================"
     log INFO "CFST DDNS 任务启动"
-    log INFO "运营商 : $CARRIER"
     log INFO "域名   : $RECORD_NAME"
     log INFO "========================================"
 
     # 获取进程锁
     lock
+
+    # ========================================================
+    # 自动检测当前公网线路运营商
+    # ========================================================
+    detect_carrier
+
+    log INFO "最终运营商标识: $CARRIER"
 
     # 启动超时看门狗
     start_watchdog
@@ -385,5 +455,6 @@ main() {
     log INFO "总耗时  : $((END - START)) 秒"
     log INFO "========================================"
 }
+
 # 执行主函数
 main

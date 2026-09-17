@@ -41,7 +41,7 @@ CUSTOM_SPEED_URL="https://filedownload.helo.de5.net"
 
 UPLOAD_URL="https://cfbestip.cfworkers.com/api/upload"
 
-AUTH_KEY="BUllddsfffslKr484"
+AUTH_KEY="BUlfdgfgdflKr484"
 
 # 运营商标识
 # ct = 电信
@@ -301,16 +301,17 @@ start_watchdog() {
 
         log ERROR "任务运行超过 ${MAX_RUNTIME} 秒，强制退出"
 
-        kill -TERM "$$" 2>/dev/null || true
+        kill -TERM "$PPID" 2>/dev/null || true
 
         sleep 5
 
-        kill -9 "$$" 2>/dev/null || true
+        kill -9 "$PPID" 2>/dev/null || true
 
     ) &
 
     WATCHDOG_PID=$!
-
+	
+	log INFO "看门狗启动，最大运行时间: ${MAX_RUNTIME} 秒"
 }
 
 
@@ -335,8 +336,7 @@ stop_watchdog() {
 
 speed_test() {
 
-    # 默认测速参数
-
+    # 默认测速参数	
     local n=50
 
     local t=4
@@ -378,7 +378,7 @@ speed_test() {
 
     log INFO "开始 CFST 测速"
 
-    log INFO "参数: n=$n t=$t dn=$dn dt=$dt tl=$tl tlr=$tlr sl=$sl"
+    log INFO "参数: -httping -cfcolo HKG,SIN,NRT,LAX,SJC,FRA n=$n t=$t dn=$dn dt=$dt tl=$tl tlr=$tlr sl=$sl"
 
 
     # 检查 CFST 文件
@@ -405,7 +405,10 @@ speed_test() {
     CMD=(
 
         "$CFST_BIN"
-
+		-httping
+		
+		-cfcolo HKG,SIN,NRT,LAX,SJC,FRA
+		
         -n "$n"
 
         -t "$t"
